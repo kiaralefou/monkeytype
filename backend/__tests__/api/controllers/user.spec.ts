@@ -22,10 +22,13 @@ const mockDecodedToken: DecodedIdToken = {
 
 describe("user controller test", () => {
   describe("user creation flow", () => {
+    const blocklistContainsMock = vi.spyOn(BlocklistDal, "contains");
     beforeEach(async () => {
       await enableSignup(true);
     });
-    afterEach(() => {});
+    afterEach(() => {
+      blocklistContainsMock.mockReset();
+    });
 
     it("should be able to check name, sign up, and get user data", async () => {
       await mockApp
@@ -74,6 +77,32 @@ describe("user controller test", () => {
           Accept: "application/json",
         })
         .expect(409);
+    });
+    it("should not create user if blocklisted", async () => {
+      //GIVEN
+      blocklistContainsMock.mockResolvedValue(true);
+      const newUser = {
+        name: "NewUser",
+        uid: "123456789",
+        email: "newuser@mail.com",
+        captcha: "captcha",
+      };
+
+      //WHEN
+
+      const result = await mockApp
+        .post("/users/signup")
+        .set("authorization", "Uid 123456789|newuser@mail.com")
+        .send(newUser)
+        .set({
+          Accept: "application/json",
+        })
+        .expect(409);
+      expect(result.body.message).toEqual("Username or email blocked");
+      expect(blocklistContainsMock).toHaveBeenCalledWith({
+        name: "NewUser",
+        email: "newuser@mail.com",
+      });
     });
   });
 

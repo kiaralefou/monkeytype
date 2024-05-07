@@ -66,6 +66,11 @@ export async function createNewUser(
     throw new MonkeyError(409, "Username unavailable");
   }
 
+  const blocklisted = await BlocklistDal.contains({ name, email });
+  if (blocklisted) {
+    throw new MonkeyError(409, "Username or email blocked");
+  }
+
   await UserDAL.addUser(name, email, uid);
   void Logger.logToDb("user_created", `${name} ${email}`, uid);
 
