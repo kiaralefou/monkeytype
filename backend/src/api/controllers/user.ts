@@ -48,7 +48,27 @@ export async function createNewUser(
 
   try {
     await verifyCaptcha(captcha);
+
+    if (email.endsWith("@tidal.lol") || email.endsWith("@selfbot.cc")) {
+      throw new MonkeyError(400, "Invalid domain");
+    }
+
+    const available = await UserDAL.isNameAvailable(name, uid);
+    if (!available) {
+      throw new MonkeyError(409, "Username unavailable");
+    }
+
+    const blocklisted = await BlocklistDal.contains({ name, email });
+    if (blocklisted) {
+      throw new MonkeyError(409, "Username or email blocked");
+    }
+
+    await UserDAL.addUser(name, email, uid);
+    void Logger.logToDb("user_created", `${name} ${email}`, uid);
+
+    return new MonkeyResponse("User created");
   } catch (e) {
+    //user was created in firebase from the frontend, remove it
     try {
       await firebaseDeleteUser(uid);
     } catch (e) {
@@ -56,27 +76,6 @@ export async function createNewUser(
     }
     throw e;
   }
-
-  if (email.endsWith("@tidal.lol") || email.endsWith("@selfbot.cc")) {
-    throw new MonkeyError(400, "Invalid domain");
-  }
-
-  const available = await UserDAL.isNameAvailable(name, uid);
-  if (!available) {
-    throw new MonkeyError(409, "Username unavailable");
-  }
-
-  const blocklisted = await BlocklistDal.contains({ name, email });
-  if (blocklisted) {
-    //user was created in firebase from the frontend, remove it
-    await firebaseDeleteUser(uid);
-    throw new MonkeyError(409, "Username or email blocked");
-  }
-
-  await UserDAL.addUser(name, email, uid);
-  void Logger.logToDb("user_created", `${name} ${email}`, uid);
-
-  return new MonkeyResponse("User created");
 }
 
 export async function sendVerificationEmail(

@@ -22,18 +22,9 @@ const mockDecodedToken: DecodedIdToken = {
 
 describe("user controller test", () => {
   describe("user creation flow", () => {
-    const blocklistContainsMock = vi.spyOn(BlocklistDal, "contains");
-    const firebaseDeleteUserMock = vi.spyOn(AuthUtils, "deleteUser");
-
     beforeEach(async () => {
       await enableSignup(true);
     });
-    afterEach(() => {
-      [blocklistContainsMock, firebaseDeleteUserMock].forEach((it) =>
-        it.mockReset()
-      );
-    });
-
     it("should be able to check name, sign up, and get user data", async () => {
       await mockApp
         .get("/users/checkName/NewUser")
@@ -82,6 +73,24 @@ describe("user controller test", () => {
         })
         .expect(409);
     });
+  });
+  describe("user signup", () => {
+    const blocklistContainsMock = vi.spyOn(BlocklistDal, "contains");
+    const firebaseDeleteUserMock = vi.spyOn(AuthUtils, "deleteUser");
+    const usernameAvailableMock = vi.spyOn(UserDal, "isNameAvailable");
+
+    beforeEach(async () => {
+      await enableSignup(true);
+      usernameAvailableMock.mockResolvedValue(true);
+    });
+    afterEach(() => {
+      [
+        blocklistContainsMock,
+        firebaseDeleteUserMock,
+        usernameAvailableMock,
+      ].forEach((it) => it.mockReset());
+    });
+
     it("should not create user if blocklisted", async () => {
       //GIVEN
       blocklistContainsMock.mockResolvedValue(true);
@@ -95,7 +104,6 @@ describe("user controller test", () => {
       };
 
       //WHEN
-
       const result = await mockApp
         .post("/users/signup")
         .set("authorization", "Uid 123456789|newuser@mail.com")
@@ -104,11 +112,76 @@ describe("user controller test", () => {
           Accept: "application/json",
         })
         .expect(409);
+
+      //THEN
       expect(result.body.message).toEqual("Username or email blocked");
       expect(blocklistContainsMock).toHaveBeenCalledWith({
         name: "NewUser",
         email: "newuser@mail.com",
       });
+
+      //user will be created in firebase from the frontend, make sure we remove it
+      expect(firebaseDeleteUserMock).toHaveBeenCalledWith("123456789");
+    });
+
+    it("should not create user domain is blacklisted", async () => {
+      ["tidal.lol", "selfbot.cc"].forEach(async (domain) => {
+        //GIVEN
+        firebaseDeleteUserMock.mockResolvedValue();
+
+        const newUser = {
+          name: "NewUser",
+          uid: "123456789",
+          email: `newuser@${domain}`,
+          captcha: "captcha",
+        };
+
+        //WHEN
+        const result = await mockApp
+          .post("/users/signup")
+          .set("authorization", `Uid 123456789|newuser@${domain}`)
+          .send(newUser)
+          .set({
+            Accept: "application/json",
+          })
+          .expect(400);
+
+        //THEN
+        expect(result.body.message).toEqual("Invalid domain");
+
+        //user will be created in firebase from the frontend, make sure we remove it
+        expect(firebaseDeleteUserMock).toHaveBeenCalledWith("123456789");
+      });
+    });
+
+    it("should not create user if username is taken", async () => {
+      //GIVEN
+      usernameAvailableMock.mockResolvedValue(false);
+      firebaseDeleteUserMock.mockResolvedValue();
+
+      const newUser = {
+        name: "NewUser",
+        uid: "123456789",
+        email: "newuser@mail.com",
+        captcha: "captcha",
+      };
+
+      //WHEN
+      const result = await mockApp
+        .post("/users/signup")
+        .set("authorization", "Uid 123456789|newuser@mail.com")
+        .send(newUser)
+        .set({
+          Accept: "application/json",
+        })
+        .expect(409);
+
+      //THEN
+      expect(result.body.message).toEqual("Username unavailable");
+      expect(usernameAvailableMock).toHaveBeenCalledWith(
+        "NewUser",
+        "123456789"
+      );
 
       //user will be created in firebase from the frontend, make sure we remove it
       expect(firebaseDeleteUserMock).toHaveBeenCalledWith("123456789");
