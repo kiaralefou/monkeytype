@@ -1,14 +1,32 @@
 import request from "supertest";
 import app from "../../../src/app";
 import * as Configuration from "../../../src/init/configuration";
+
 import { getCurrentTestActivity } from "../../../src/api/controllers/user";
 import * as UserDal from "../../../src/dal/user";
 import _ from "lodash";
+import * as AuthUtils from "../../../src/utils/auth";
+import * as AdminUuids from "../../../src/dal/admin-uids";
+import * as BlocklistDal from "../../../src/dal/blocklist";
+import GeorgeQueue from "../../../src/queues/george-queue";
+import { DecodedIdToken } from "firebase-admin/lib/auth/token-verifier";
 
 const mockApp = request(app);
+const configuration = Configuration.getCachedConfiguration();
+
+const mockDecodedToken: DecodedIdToken = {
+  uid: "uid",
+  email: "newuser@mail.com",
+  iat: 0,
+} as DecodedIdToken;
 
 describe("user controller test", () => {
   describe("user creation flow", () => {
+    beforeEach(async () => {
+      await enableSignup(true);
+    });
+    afterEach(() => {});
+
     it("should be able to check name, sign up, and get user data", async () => {
       await mockApp
         .get("/users/checkName/NewUser")
@@ -23,42 +41,6 @@ describe("user controller test", () => {
         email: "newuser@mail.com",
         captcha: "captcha",
       };
-
-      vi.spyOn(Configuration, "getCachedConfiguration").mockResolvedValue({
-        //if stuff breaks this might be the reason
-        users: {
-          signUp: true,
-          discordIntegration: {
-            enabled: false,
-          },
-          autoBan: {
-            enabled: false,
-            maxCount: 5,
-            maxHours: 1,
-          },
-          profiles: {
-            enabled: false,
-          },
-          xp: {
-            enabled: false,
-            gainMultiplier: 0,
-            maxDailyBonus: 0,
-            minDailyBonus: 0,
-            streak: {
-              enabled: false,
-              maxStreakDays: 0,
-              maxStreakMultiplier: 0,
-            },
-          },
-          inbox: {
-            enabled: false,
-            maxMail: 0,
-          },
-          premium: {
-            enabled: true,
-          },
-        },
-      } as any);
 
       await mockApp
         .post("/users/signup")
@@ -92,8 +74,140 @@ describe("user controller test", () => {
           Accept: "application/json",
         })
         .expect(409);
+    });
+  });
 
-      vi.restoreAllMocks();
+  describe("toggle ban", () => {
+    const getUserMock = vi.spyOn(UserDal, "getUser");
+    const setBannedMock = vi.spyOn(UserDal, "setBanned");
+    const georgeUserBannedMock = vi.spyOn(GeorgeQueue, "userBanned");
+    const isAdminMock = vi.spyOn(AdminUuids, "isAdmin");
+    const blocklistAddMock = vi.spyOn(BlocklistDal, "add");
+    const blocklistRemoveMock = vi.spyOn(BlocklistDal, "remove");
+
+    beforeEach(async () => {
+      await enableAdminFeatures(true);
+      vi.spyOn(AuthUtils, "verifyIdToken").mockResolvedValue(mockDecodedToken);
+      isAdminMock.mockResolvedValue(true);
+    });
+    afterEach(() => {
+      [
+        getUserMock,
+        setBannedMock,
+        georgeUserBannedMock,
+        isAdminMock,
+        blocklistAddMock,
+        blocklistRemoveMock,
+      ].forEach((it) => it.mockReset());
+    });
+
+    it("bans user with discord", async () => {
+      //GIVEN
+      const uid = "myUid";
+      const user = {
+        uid,
+        name: "name",
+        email: "email",
+        discordId: "discordId",
+      } as unknown as MonkeyTypes.DBUser;
+      getUserMock.mockResolvedValue(user);
+
+      //WHEN
+      await mockApp
+        .post("/admin/toggleBan")
+        .set("Authorization", "Bearer 123456789")
+        .send({ uid })
+        .set({
+          Accept: "application/json",
+        })
+        .expect(200);
+
+      //THEN
+      expect(getUserMock).toHaveBeenLastCalledWith(uid, "toggle ban");
+      expect(setBannedMock).toHaveBeenCalledWith(uid, true);
+      expect(georgeUserBannedMock).toHaveBeenCalledWith("discordId", true);
+      expect(blocklistAddMock).toHaveBeenCalledWith(user);
+      expect(blocklistRemoveMock).not.toHaveBeenCalled();
+    });
+    it("bans user without discord", async () => {
+      //GIVEN
+      const uid = "myUid";
+      const user = {
+        uid,
+        name: "name",
+        email: "email",
+        discordId: "",
+      } as unknown as MonkeyTypes.DBUser;
+      getUserMock.mockResolvedValue(user);
+
+      //WHEN
+      await mockApp
+        .post("/admin/toggleBan")
+        .set("Authorization", "Bearer 123456789")
+        .send({ uid })
+        .set({
+          Accept: "application/json",
+        })
+        .expect(200);
+
+      //THEN
+      expect(georgeUserBannedMock).not.toHaveBeenCalled();
+    });
+    it("unbans user with discord", async () => {
+      //GIVEN
+      const uid = "myUid";
+
+      const user = {
+        uid,
+        name: "name",
+        email: "email",
+        discordId: "discordId",
+        banned: true,
+      } as unknown as MonkeyTypes.DBUser;
+      getUserMock.mockResolvedValue(user);
+
+      //WHEN
+      await mockApp
+        .post("/admin/toggleBan")
+        .set("Authorization", "Bearer 123456789")
+        .send({ uid })
+        .set({
+          Accept: "application/json",
+        })
+        .expect(200);
+
+      //THEN
+      expect(getUserMock).toHaveBeenLastCalledWith(uid, "toggle ban");
+      expect(setBannedMock).toHaveBeenCalledWith(uid, false);
+      expect(georgeUserBannedMock).toHaveBeenCalledWith("discordId", false);
+      expect(blocklistRemoveMock).toHaveBeenCalledWith(user);
+      expect(blocklistAddMock).not.toHaveBeenCalled();
+    });
+    it("unbans user without discord", async () => {
+      //GIVEN
+      const uid = "myUid";
+
+      const user = {
+        uid,
+        name: "name",
+        email: "email",
+        discordId: "",
+        banned: true,
+      } as unknown as MonkeyTypes.DBUser;
+      getUserMock.mockResolvedValue(user);
+
+      //WHEN
+      await mockApp
+        .post("/admin/toggleBan")
+        .set("Authorization", "Bearer 123456789")
+        .send({ uid })
+        .set({
+          Accept: "application/json",
+        })
+        .expect(200);
+
+      //THEN
+      expect(georgeUserBannedMock).not.toHaveBeenCalled();
     });
   });
 
@@ -210,11 +324,29 @@ function fillYearWithDay(days: number): number[] {
   return result;
 }
 
-const configuration = Configuration.getCachedConfiguration();
-
 async function enablePremiumFeatures(premium: boolean): Promise<void> {
   const mockConfig = _.merge(await configuration, {
     users: { premium: { enabled: premium } },
+  });
+
+  vi.spyOn(Configuration, "getCachedConfiguration").mockResolvedValue(
+    mockConfig
+  );
+}
+
+async function enableAdminFeatures(enabled: boolean): Promise<void> {
+  const mockConfig = _.merge(await configuration, {
+    admin: { endpointsEnabled: enabled },
+  });
+
+  vi.spyOn(Configuration, "getCachedConfiguration").mockResolvedValue(
+    mockConfig
+  );
+}
+
+async function enableSignup(enabled: boolean): Promise<void> {
+  const mockConfig = _.merge(await configuration, {
+    users: { signUp: enabled },
   });
 
   vi.spyOn(Configuration, "getCachedConfiguration").mockResolvedValue(

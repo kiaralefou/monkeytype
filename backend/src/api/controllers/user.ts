@@ -32,6 +32,7 @@ import {
 } from "../../utils/auth";
 import * as Dates from "date-fns";
 import { UTCDateMini } from "@date-fns/utc";
+import * as BlocklistDal from "../../dal/blocklist";
 
 async function verifyCaptcha(captcha: string): Promise<void> {
   if (!(await verify(captcha))) {
@@ -917,9 +918,11 @@ export async function toggleBan(
   if (user.banned) {
     await UserDAL.setBanned(uid, false);
     if (discordIdIsValid) await GeorgeQueue.userBanned(discordId, false);
+    await BlocklistDal.remove(user);
   } else {
     await UserDAL.setBanned(uid, true);
     if (discordIdIsValid) await GeorgeQueue.userBanned(discordId, true);
+    await BlocklistDal.add(user);
   }
 
   return new MonkeyResponse(`Ban toggled`, {
