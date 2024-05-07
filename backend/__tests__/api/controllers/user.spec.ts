@@ -23,11 +23,15 @@ const mockDecodedToken: DecodedIdToken = {
 describe("user controller test", () => {
   describe("user creation flow", () => {
     const blocklistContainsMock = vi.spyOn(BlocklistDal, "contains");
+    const firebaseDeleteUserMock = vi.spyOn(AuthUtils, "deleteUser");
+
     beforeEach(async () => {
       await enableSignup(true);
     });
     afterEach(() => {
-      blocklistContainsMock.mockReset();
+      [blocklistContainsMock, firebaseDeleteUserMock].forEach((it) =>
+        it.mockReset()
+      );
     });
 
     it("should be able to check name, sign up, and get user data", async () => {
@@ -81,6 +85,8 @@ describe("user controller test", () => {
     it("should not create user if blocklisted", async () => {
       //GIVEN
       blocklistContainsMock.mockResolvedValue(true);
+      firebaseDeleteUserMock.mockResolvedValue();
+
       const newUser = {
         name: "NewUser",
         uid: "123456789",
@@ -103,6 +109,9 @@ describe("user controller test", () => {
         name: "NewUser",
         email: "newuser@mail.com",
       });
+
+      //user will be created in firebase from the frontend, make sure we remove it
+      expect(firebaseDeleteUserMock).toHaveBeenCalledWith("123456789");
     });
   });
 

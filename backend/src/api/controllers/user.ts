@@ -68,6 +68,8 @@ export async function createNewUser(
 
   const blocklisted = await BlocklistDal.contains({ name, email });
   if (blocklisted) {
+    //user was created in firebase from the frontend, remove it
+    await firebaseDeleteUser(uid);
     throw new MonkeyError(409, "Username or email blocked");
   }
 
