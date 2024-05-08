@@ -23,19 +23,19 @@ describe("BlocklistDal", () => {
       //THEN
       expect(
         BlacklistDal.getCollection().findOne({
-          emailHash: BlacklistDal.sha256(email),
+          emailHash: BlacklistDal.hash(email),
         })
       ).resolves.toMatchObject({
-        emailHash: BlacklistDal.sha256(email),
+        emailHash: BlacklistDal.hash(email),
         timestamp: now,
       });
 
       expect(
         BlacklistDal.getCollection().findOne({
-          usernameHash: BlacklistDal.sha256(name),
+          usernameHash: BlacklistDal.hash(name),
         })
       ).resolves.toMatchObject({
-        usernameHash: BlacklistDal.sha256(name),
+        usernameHash: BlacklistDal.hash(name),
         timestamp: now,
       });
     });
@@ -54,12 +54,95 @@ describe("BlocklistDal", () => {
       //THEN
       expect(
         BlacklistDal.getCollection().findOne({
-          discordIdHash: BlacklistDal.sha256(discordId),
+          discordIdHash: BlacklistDal.hash(discordId),
         })
       ).resolves.toMatchObject({
-        discordIdHash: BlacklistDal.sha256(discordId),
+        discordIdHash: BlacklistDal.hash(discordId),
         timestamp: now,
       });
+    });
+    it("adds user should not create duplicate name", async () => {
+      //GIVEN
+      const now = 1715082588;
+      vitest.setSystemTime(now);
+
+      const name = "user" + new ObjectId().toHexString();
+      const email = `${name}@example.com`;
+      const email2 = `${name}@otherdomain.com`;
+      await BlacklistDal.add({ name, email });
+
+      //WHEN
+      await BlacklistDal.add({ name, email: email2 });
+
+      //THEN
+      expect(
+        BlacklistDal.getCollection()
+          .find({
+            usernameHash: BlacklistDal.hash(name),
+          })
+          .toArray()
+      ).resolves.toHaveLength(1);
+      expect(
+        BlacklistDal.getCollection()
+          .find({
+            emailHash: BlacklistDal.hash(email),
+          })
+          .toArray()
+      ).resolves.toHaveLength(1);
+      expect(
+        BlacklistDal.getCollection()
+          .find({
+            emailHash: BlacklistDal.hash(email2),
+          })
+          .toArray()
+      ).resolves.toHaveLength(1);
+    });
+    it("adds user should not create duplicate email", async () => {
+      //GIVEN
+      const now = 1715082588;
+      vitest.setSystemTime(now);
+
+      const name = "user" + new ObjectId().toHexString();
+      const email = `${name}@example.com`;
+      const name2 = "user" + new ObjectId().toHexString();
+      await BlacklistDal.add({ name, email });
+
+      //WHEN
+      await BlacklistDal.add({ name: name2, email });
+
+      //THEN
+      expect(
+        BlacklistDal.getCollection()
+          .find({
+            emailHash: BlacklistDal.hash(email),
+          })
+          .toArray()
+      ).resolves.toHaveLength(1);
+    });
+    it("adds user should not create duplicate discordId", async () => {
+      //GIVEN
+      const now = 1715082588;
+      vitest.setSystemTime(now);
+
+      const name = "user" + new ObjectId().toHexString();
+      const name2 = "user" + new ObjectId().toHexString();
+      const email = `${name}@example.com`;
+      const discordId = `${name}DiscordId`;
+
+      await BlacklistDal.add({ name, email, discordId });
+
+      //WHEN
+      await BlacklistDal.add({ name: name2, email, discordId });
+
+      //THEN
+
+      expect(
+        BlacklistDal.getCollection()
+          .find({
+            discordIdHash: BlacklistDal.hash(discordId),
+          })
+          .toArray()
+      ).resolves.toHaveLength(1);
     });
   });
   describe("contains", () => {
@@ -75,17 +158,26 @@ describe("BlocklistDal", () => {
       //by name
       expect(BlacklistDal.contains({ name })).resolves.toBeTruthy();
       expect(
+        BlacklistDal.contains({ name: name.toUpperCase() })
+      ).resolves.toBeTruthy();
+      expect(
         BlacklistDal.contains({ name, email: "unknown", discordId: "unknown" })
       ).resolves.toBeTruthy();
 
       //by email
       expect(BlacklistDal.contains({ email })).resolves.toBeTruthy();
       expect(
+        BlacklistDal.contains({ email: email.toUpperCase() })
+      ).resolves.toBeTruthy();
+      expect(
         BlacklistDal.contains({ name: "unknown", email, discordId: "unknown" })
       ).resolves.toBeTruthy();
 
       //by discordId
       expect(BlacklistDal.contains({ discordId })).resolves.toBeTruthy();
+      expect(
+        BlacklistDal.contains({ discordId: discordId.toUpperCase() })
+      ).resolves.toBeTruthy();
       expect(
         BlacklistDal.contains({ name: "unknown", email: "unknown", discordId })
       ).resolves.toBeTruthy();
@@ -235,10 +327,12 @@ describe("BlocklistDal", () => {
       expect(BlacklistDal.contains({ discordId })).resolves.toBeTruthy();
     });
   });
-  describe("sha256", () => {
-    it("hashes", () => {
-      expect(BlacklistDal.sha256("test")).toEqual(
-        "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+  describe("hash", () => {
+    it("hashes case insensitive", () => {
+      ["test", "TEST", "tESt"].forEach((value) =>
+        expect(BlacklistDal.hash(value)).toEqual(
+          "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+        )
       );
     });
   });

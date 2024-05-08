@@ -9,28 +9,43 @@ export const getCollection = (): Collection<MonkeyTypes.DBBlocklistEntry> =>
 
 export async function add(user: BlocklistEntry): Promise<void> {
   const timestamp = Date.now();
-  const entries: MonkeyTypes.DBBlocklistEntry[] = [
-    {
-      _id: new ObjectId(),
-      usernameHash: sha256(user.name),
-      timestamp,
-    },
-    {
-      _id: new ObjectId(),
-      emailHash: sha256(user.email),
-      timestamp,
-    },
-  ];
+  const inserts: Promise<unknown>[] = [];
+
+  const usernameHash = hash(user.name);
+  const emailHash = hash(user.email);
+  inserts.push(
+    getCollection().replaceOne(
+      { usernameHash },
+      {
+        usernameHash,
+        timestamp,
+      },
+      { upsert: true }
+    ),
+    getCollection().replaceOne(
+      { emailHash },
+      {
+        emailHash,
+        timestamp,
+      },
+      { upsert: true }
+    )
+  );
 
   if (user.discordId !== undefined && user.discordId !== "") {
-    entries.push({
-      _id: new ObjectId(),
-      discordIdHash: sha256(user.discordId),
-      timestamp,
-    });
+    const discordIdHash = hash(user.discordId);
+    inserts.push(
+      getCollection().replaceOne(
+        { discordIdHash },
+        {
+          discordIdHash,
+          timestamp,
+        },
+        { upsert: true }
+      )
+    );
   }
-
-  await getCollection().insertMany(entries);
+  await Promise.all(inserts);
 }
 
 export async function remove(user: Partial<BlocklistEntry>): Promise<void> {
@@ -51,8 +66,8 @@ export async function contains(
     })) !== 0
   );
 }
-export function sha256(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
+export function hash(value: string): string {
+  return createHash("sha256").update(value.toLocaleLowerCase()).digest("hex");
 }
 
 function getFilter(
@@ -60,13 +75,25 @@ function getFilter(
 ): Partial<MonkeyTypes.DBBlocklistEntry>[] {
   const filter: Partial<MonkeyTypes.DBBlocklistEntry>[] = [];
   if (user.email !== undefined) {
-    filter.push({ emailHash: sha256(user.email) });
+    filter.push({ emailHash: hash(user.email) });
   }
   if (user.name !== undefined) {
-    filter.push({ usernameHash: sha256(user.name) });
+    filter.push({ usernameHash: hash(user.name) });
   }
   if (user.discordId !== undefined) {
-    filter.push({ discordIdHash: sha256(user.discordId) });
+    filter.push({ discordIdHash: hash(user.discordId) });
   }
   return filter;
+}
+
+export async function createIndicies(): Promise<void> {
+  await getCollection().createIndex({ usernameHash: 1 }, { unique: true });
+  await getCollection().createIndex({ emailHash: 1 }, { unique: true });
+  await getCollection().createIndex(
+    { discordIdHash: 1 },
+    {
+      unique: true,
+      partialFilterExpression: { discordIdHash: { $exists: true } },
+    }
+  );
 }
