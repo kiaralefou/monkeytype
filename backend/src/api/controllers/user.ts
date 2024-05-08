@@ -189,10 +189,9 @@ export async function deleteUser(
 
   const userInfo = await UserDAL.getUser(uid, "delete user");
 
-  // gdpr goes brr, find a different way
-  // if (userInfo.banned) {
-  //   throw new MonkeyError(403, "Banned users cannot delete their account");
-  // }
+  if (userInfo.banned === true) {
+    await BlocklistDal.add(userInfo);
+  }
 
   //cleanup database
   await Promise.all([
@@ -924,11 +923,9 @@ export async function toggleBan(
   if (user.banned) {
     await UserDAL.setBanned(uid, false);
     if (discordIdIsValid) await GeorgeQueue.userBanned(discordId, false);
-    await BlocklistDal.remove(user);
   } else {
     await UserDAL.setBanned(uid, true);
     if (discordIdIsValid) await GeorgeQueue.userBanned(discordId, true);
-    await BlocklistDal.add(user);
   }
 
   return new MonkeyResponse(`Ban toggled`, {
