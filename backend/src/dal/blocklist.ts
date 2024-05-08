@@ -2,7 +2,7 @@ import { Collection, ObjectId } from "mongodb";
 import * as db from "../init/db";
 import { createHash } from "crypto";
 
-type BlocklistEntry = Pick<SharedTypes.User, "name" | "email">;
+type BlocklistEntry = Pick<SharedTypes.User, "name" | "email" | "discordId">;
 // Export for use in tests
 export const getCollection = (): Collection<MonkeyTypes.DBBlocklistEntry> =>
   db.collection("blocklist");
@@ -21,6 +21,14 @@ export async function add(user: BlocklistEntry): Promise<void> {
       timestamp,
     },
   ];
+
+  if (user.discordId !== undefined && user.discordId !== "") {
+    entries.push({
+      _id: new ObjectId(),
+      discordIdHash: sha256(user.discordId),
+      timestamp,
+    });
+  }
 
   await getCollection().insertMany(entries);
 }
@@ -56,6 +64,9 @@ function getFilter(
   }
   if (user.name !== undefined) {
     filter.push({ usernameHash: sha256(user.name) });
+  }
+  if (user.discordId !== undefined) {
+    filter.push({ discordIdHash: sha256(user.discordId) });
   }
   return filter;
 }

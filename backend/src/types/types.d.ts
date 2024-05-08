@@ -115,6 +115,7 @@ declare namespace MonkeyTypes {
     _id: string;
     usernameHash?: string;
     emailHash?: string;
+    discordIdHash?: string;
     timestamp: number;
   };
 
