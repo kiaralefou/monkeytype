@@ -1,4 +1,4 @@
-import { Collection, ObjectId } from "mongodb";
+import { Collection } from "mongodb";
 import * as db from "../init/db";
 import { createHash } from "crypto";
 
@@ -87,8 +87,20 @@ function getFilter(
 }
 
 export async function createIndicies(): Promise<void> {
-  await getCollection().createIndex({ usernameHash: 1 }, { unique: true });
-  await getCollection().createIndex({ emailHash: 1 }, { unique: true });
+  await getCollection().createIndex(
+    { usernameHash: 1 },
+    {
+      unique: true,
+      partialFilterExpression: { usernameHash: { $exists: true } },
+    }
+  );
+  await getCollection().createIndex(
+    { emailHash: 1 },
+    {
+      unique: true,
+      partialFilterExpression: { emailHash: { $exists: true } },
+    }
+  );
   await getCollection().createIndex(
     { discordIdHash: 1 },
     {

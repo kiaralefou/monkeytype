@@ -509,6 +509,10 @@ export async function linkDiscord(
     );
   }
 
+  if (await BlocklistDal.contains({ discordId })) {
+    throw new MonkeyError(409, "The Discord account is blocked");
+  }
+
   await UserDAL.linkDiscord(uid, discordId, discordAvatar);
 
   await GeorgeQueue.linkDiscord(discordId, uid);
