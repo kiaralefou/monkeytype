@@ -19,8 +19,6 @@ import { deleteConfig } from "../../dal/config";
 import { verify } from "../../utils/captcha";
 import * as LeaderboardsDAL from "../../dal/leaderboards";
 import { purgeUserFromDailyLeaderboards } from "../../utils/daily-leaderboards";
-import { randomBytes } from "crypto";
-import * as RedisClient from "../../init/redis";
 import { v4 as uuidv4 } from "uuid";
 import { ObjectId } from "mongodb";
 import * as ReportDAL from "../../dal/report";
@@ -441,39 +439,24 @@ export async function getUser(
 export async function getOauthLink(
   req: MonkeyTypes.Request
 ): Promise<MonkeyResponse> {
-  const connection = RedisClient.getConnection();
-  if (!connection) {
-    throw new MonkeyError(500, "Redis connection not found");
-  }
-
   const { uid } = req.ctx.decodedToken;
-  const token = randomBytes(10).toString("hex");
-
-  //add the token uid pair to reids
-  await connection.setex(`discordoauth:${uid}`, 60, token);
 
   //build the url
-  const url = DiscordUtils.getOauthLink();
+  const url = await DiscordUtils.getOauthLink(uid);
 
   //return
   return new MonkeyResponse("Discord oauth link generated", {
-    url: `${url}&state=${token}`,
+    url: url,
   });
 }
 
 export async function linkDiscord(
   req: MonkeyTypes.Request
 ): Promise<MonkeyResponse> {
-  const connection = RedisClient.getConnection();
-  if (!connection) {
-    throw new MonkeyError(500, "Redis connection not found");
-  }
   const { uid } = req.ctx.decodedToken;
   const { tokenType, accessToken, state } = req.body;
 
-  const redisToken = await connection.getdel(`discordoauth:${uid}`);
-
-  if (!(redisToken ?? "") || redisToken !== state) {
+  if (!(await DiscordUtils.iStateValidForUser(state, uid))) {
     throw new MonkeyError(403, "Invalid user token");
   }
 

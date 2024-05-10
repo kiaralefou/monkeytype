@@ -14,6 +14,7 @@ import * as ConfigDal from "../../../src/dal/config";
 import * as ResultDal from "../../../src/dal/result";
 import * as DailyLeaderboards from "../../../src/utils/daily-leaderboards";
 import GeorgeQueue from "../../../src/queues/george-queue";
+import * as DiscordUtils from "../../../src/utils/discord";
 import { DecodedIdToken } from "firebase-admin/lib/auth/token-verifier";
 
 const mockApp = request(app);
@@ -525,6 +526,71 @@ describe("user controller test", () => {
       );
     });
   });
+  describe("link discord", () => {
+    const getUserMock = vi.spyOn(UserDal, "getUser");
+    const isDiscordIdAvailableMock = vi.spyOn(UserDal, "isDiscordIdAvailable");
+    const isStateValidForUserMock = vi.spyOn(
+      DiscordUtils,
+      "iStateValidForUser"
+    );
+    const getDiscordUserMock = vi.spyOn(DiscordUtils, "getDiscordUser");
+    const blocklistContainsMock = vi.spyOn(BlocklistDal, "contains");
+
+    beforeEach(async () => {
+      vi.spyOn(AuthUtils, "verifyIdToken").mockResolvedValue(mockDecodedToken);
+      isStateValidForUserMock.mockResolvedValue(true);
+      getDiscordUserMock.mockResolvedValue({
+        id: "discordUserId",
+        avatar: "discorUserAvatar",
+        username: "discordUserName",
+        discriminator: "discordUserDiscriminator",
+      });
+      isDiscordIdAvailableMock.mockResolvedValue(true);
+      blocklistContainsMock.mockResolvedValue(false);
+      await enableDiscordIntegration(true);
+    });
+    afterEach(() => {
+      [
+        getUserMock,
+        isStateValidForUserMock,
+        isDiscordIdAvailableMock,
+        getDiscordUserMock,
+      ].forEach((it) => it.mockReset());
+    });
+
+    it("should not link if discordId is blocked", async () => {
+      //GIVEN
+      const uid = mockDecodedToken.uid;
+      const user = {
+        uid,
+        name: "name",
+        email: "email",
+      } as unknown as MonkeyTypes.DBUser;
+      getUserMock.mockResolvedValue(user);
+      blocklistContainsMock.mockResolvedValue(true);
+
+      //WHEN
+      const result = await mockApp
+        .post("/users/discord/link")
+        .set("Authorization", "Bearer 123456789")
+        .set({
+          Accept: "application/json",
+        })
+        .send({
+          tokenType: "tokenType",
+          accessToken: "accessToken",
+          state: "statestatestatestate",
+        })
+        .expect(409);
+
+      //THEN
+      expect(result.body.message).toEqual("The Discord account is blocked");
+
+      expect(blocklistContainsMock).toBeCalledWith({
+        discordId: "discordUserId",
+      });
+    });
+  });
 });
 
 function fillYearWithDay(days: number): number[] {
@@ -558,6 +624,16 @@ async function enableAdminFeatures(enabled: boolean): Promise<void> {
 async function enableSignup(enabled: boolean): Promise<void> {
   const mockConfig = _.merge(await configuration, {
     users: { signUp: enabled },
+  });
+
+  vi.spyOn(Configuration, "getCachedConfiguration").mockResolvedValue(
+    mockConfig
+  );
+}
+
+async function enableDiscordIntegration(enabled: boolean): Promise<void> {
+  const mockConfig = _.merge(await configuration, {
+    users: { discordIntegration: { enabled } },
   });
 
   vi.spyOn(Configuration, "getCachedConfiguration").mockResolvedValue(
