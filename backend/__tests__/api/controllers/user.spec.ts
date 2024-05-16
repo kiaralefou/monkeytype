@@ -21,12 +21,15 @@ const mockApp = request(app);
 const configuration = Configuration.getCachedConfiguration();
 
 const mockDecodedToken: DecodedIdToken = {
-  uid: "uid",
+  uid: "123456789",
   email: "newuser@mail.com",
   iat: Date.now(),
 } as DecodedIdToken;
 
 describe("user controller test", () => {
+  beforeEach(() => {
+    vi.spyOn(AuthUtils, "verifyIdToken").mockResolvedValue(mockDecodedToken);
+  });
   describe("user creation flow", () => {
     beforeEach(async () => {
       await enableSignup(true);
@@ -201,7 +204,7 @@ describe("user controller test", () => {
     const isAdminMock = vi.spyOn(AdminUuids, "isAdmin");
     beforeEach(async () => {
       await enableAdminFeatures(true);
-      vi.spyOn(AuthUtils, "verifyIdToken").mockResolvedValue(mockDecodedToken);
+
       isAdminMock.mockResolvedValue(true);
     });
     afterEach(() => {
@@ -317,14 +320,18 @@ describe("user controller test", () => {
   });
 
   describe("getTestActivity", () => {
+    const getUserMock = vi.spyOn(UserDal, "getUser");
+    afterAll(() => {
+      getUserMock.mockReset();
+    });
     it("should return 503 for non premium users", async () => {
       //given
-      vi.spyOn(UserDal, "getUser").mockResolvedValue({
+      getUserMock.mockResolvedValue({
         testActivity: { "2023": [1, 2, 3], "2024": [4, 5, 6] },
       } as unknown as MonkeyTypes.DBUser);
 
       //when
-      const response = await mockApp
+      await mockApp
         .get("/users/testActivity")
         .set("authorization", "Uid 123456789")
         .send()
@@ -332,7 +339,7 @@ describe("user controller test", () => {
     });
     it("should send data for premium users", async () => {
       //given
-      vi.spyOn(UserDal, "getUser").mockResolvedValue({
+      getUserMock.mockResolvedValue({
         testActivity: { "2023": [1, 2, 3], "2024": [4, 5, 6] },
       } as unknown as MonkeyTypes.DBUser);
       vi.spyOn(UserDal, "checkIfUserIsPremium").mockResolvedValue(true);
@@ -435,7 +442,6 @@ describe("user controller test", () => {
     const blocklistAddMock = vi.spyOn(BlocklistDal, "add");
 
     beforeEach(async () => {
-      vi.spyOn(AuthUtils, "verifyIdToken").mockResolvedValue(mockDecodedToken);
       [
         firebaseDeleteUserMock,
         deleteUserMock,
@@ -466,7 +472,7 @@ describe("user controller test", () => {
         discordId: "discordId",
         banned: true,
       } as unknown as MonkeyTypes.DBUser;
-      getUserMock.mockResolvedValue(user);
+      await getUserMock.mockResolvedValue(user);
 
       //WHEN
       await mockApp
@@ -537,7 +543,6 @@ describe("user controller test", () => {
     const blocklistContainsMock = vi.spyOn(BlocklistDal, "contains");
 
     beforeEach(async () => {
-      vi.spyOn(AuthUtils, "verifyIdToken").mockResolvedValue(mockDecodedToken);
       isStateValidForUserMock.mockResolvedValue(true);
       getDiscordUserMock.mockResolvedValue({
         id: "discordUserId",
