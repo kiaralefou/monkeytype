@@ -51,8 +51,6 @@ export async function addUser(
   if (result.upsertedCount === 0) {
     throw new MonkeyError(409, "User document already exists", "addUser");
   }
-
-  console.log({ newUserDocument });
 }
 
 export async function deleteUser(uid: string): Promise<void> {
