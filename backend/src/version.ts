@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 
 const SERVER_VERSION_FILE_PATH = join(__dirname, "./server.version");
 const { COMMIT_HASH = "NO_HASH" } = process.env;
+const DEVELOPMENT_VERSION = "DEVELOPMENT-VERSION";
 
 function getDateVersion(): string {
   const date = new Date();
@@ -20,17 +21,27 @@ function getDateVersion(): string {
     .join("_");
 }
 
+function readVersionFromFile(): string {
+  return existsSync(SERVER_VERSION_FILE_PATH)
+    ? readFileSync(SERVER_VERSION_FILE_PATH, "utf-8")
+    : "";
+}
+
+function writeVersionToFile(version: string): void {
+  writeFileSync(SERVER_VERSION_FILE_PATH, version);
+}
+
 function getVersion(): string {
   if (isDevEnvironment()) {
-    return "DEVELOPMENT-VERSION";
+    return DEVELOPMENT_VERSION;
   }
 
-  if (existsSync(SERVER_VERSION_FILE_PATH)) {
-    return readFileSync(SERVER_VERSION_FILE_PATH, "utf-8");
-  }
+  let serverVersion = readVersionFromFile();
 
-  const serverVersion = `${getDateVersion()}.${COMMIT_HASH}`;
-  writeFileSync(SERVER_VERSION_FILE_PATH, serverVersion);
+  if (!serverVersion) {
+    serverVersion = `${getDateVersion()}.${COMMIT_HASH}`;
+    writeVersionToFile(serverVersion);
+  }
 
   return serverVersion;
 }

@@ -2,31 +2,32 @@ import cors from "cors";
 import helmet from "helmet";
 import addApiRoutes from "./api/routes";
 import express, { urlencoded, json } from "express";
-import contextMiddleware from "./middlewares/context";
-import errorHandlingMiddleware from "./middlewares/error";
 import {
+  contextMiddleware,
+  errorHandlingMiddleware,
   badAuthRateLimiterHandler,
   rootRateLimiter,
-} from "./middlewares/rate-limit";
+} from "./middlewares";
 
 function buildApp(): express.Application {
   const app = express();
 
-  app.use(urlencoded({ extended: true }));
-  app.use(json());
-  app.use(cors());
-  app.use(helmet());
+  const middlewares = [
+    urlencoded({ extended: true }),
+    json(),
+    cors(),
+    helmet(),
+    contextMiddleware,
+    badAuthRateLimiterHandler,
+    rootRateLimiter,
+    errorHandlingMiddleware,
+  ];
 
   app.set("trust proxy", 1);
 
-  app.use(contextMiddleware);
-
-  app.use(badAuthRateLimiterHandler);
-  app.use(rootRateLimiter);
+  middlewares.forEach((middleware) => app.use(middleware));
 
   addApiRoutes(app);
-
-  app.use(errorHandlingMiddleware);
 
   return app;
 }

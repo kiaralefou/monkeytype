@@ -1,18 +1,15 @@
 import "dotenv/config";
-import * as db from "./init/db";
-import jobs from "./jobs";
+import { connect as connectDb } from "./init/db";
+import { init as initJobs } from "./jobs";
 import { getLiveConfiguration } from "./init/configuration";
 import app from "./app";
 import { Server } from "http";
-import { version } from "./version";
-import { recordServerVersion } from "./utils/prometheus";
-import * as RedisClient from "./init/redis";
-import queues from "./queues";
-import workers from "./workers";
+import { version, recordServerVersion } from "./version";
+import { connect as connectRedis, isConnected as isRedisConnected, getConnection as getRedisConnection } from "./init/redis";
+import { initQueues, initWorkers } from "./queues";
 import Logger from "./utils/logger";
-import * as EmailClient from "./init/email-client";
+import { init as initEmailClient } from "./init/email-client";
 import { init as initFirebaseAdmin } from "./init/firebase-admin";
-
 import { createIndicies as leaderboardDbSetup } from "./dal/leaderboards";
 
 async function bootServer(port: number): Promise<Server> {
@@ -20,7 +17,7 @@ async function bootServer(port: number): Promise<Server> {
     Logger.info(`Starting server version ${version}`);
     Logger.info(`Starting server in ${process.env["MODE"]} mode`);
     Logger.info(`Connecting to database ${process.env["DB_NAME"]}...`);
-    await db.connect();
+    await connectDb();
     Logger.success("Connected to database");
 
     Logger.info("Initializing Firebase app instance...");
@@ -31,38 +28,26 @@ async function bootServer(port: number): Promise<Server> {
     Logger.success("Live configuration fetched");
 
     Logger.info("Initializing email client...");
-    await EmailClient.init();
+    await initEmailClient();
 
     Logger.info("Connecting to redis...");
-    await RedisClient.connect();
+    await connectRedis();
 
-    if (RedisClient.isConnected()) {
+    if (isRedisConnected()) {
       Logger.success("Connected to redis");
-      const connection = RedisClient.getConnection();
+      const connection = getRedisConnection();
 
       Logger.info("Initializing queues...");
-      queues.forEach((queue) => {
-        queue.init(connection);
-      });
-      Logger.success(
-        `Queues initialized: ${queues
-          .map((queue) => queue.queueName)
-          .join(", ")}`
-      );
+      initQueues(connection);
+      Logger.success("Queues initialized");
 
       Logger.info("Initializing workers...");
-      workers.forEach(async (worker) => {
-        await worker(connection).run();
-      });
-      Logger.success(
-        `Workers initialized: ${workers
-          .map((worker) => worker(connection).name)
-          .join(", ")}`
-      );
+      initWorkers(connection);
+      Logger.success("Workers initialized");
     }
 
     Logger.info("Starting cron jobs...");
-    jobs.forEach((job) => job.start());
+    initJobs();
     Logger.success("Cron jobs started");
 
     Logger.info("Setting up leaderboard indicies...");

@@ -8,14 +8,25 @@ import {
   setTokenCacheSize,
 } from "./prometheus";
 
+const MAX_CACHE_ENTRIES = 20000;
+const MAX_CACHE_SIZE = 50000000; // 50MB
+const TOKEN_CACHE_BUFFER = 1000 * 60 * 5; // 5 minutes
+
 const tokenCache = new LRUCache<string, DecodedIdToken>({
-  max: 20000,
-  maxSize: 50000000, // 50MB
+  max: MAX_CACHE_ENTRIES,
+  maxSize: MAX_CACHE_SIZE,
   sizeCalculation: (token, key): number =>
     JSON.stringify(token).length + key.length, //sizeInBytes
 });
 
-const TOKEN_CACHE_BUFFER = 1000 * 60 * 5; // 5 minutes
+setInterval(() => {
+  for (const [key, token] of tokenCache.entries()) {
+    const expirationDate = token.exp * 1000 - TOKEN_CACHE_BUFFER;
+    if (expirationDate < Date.now()) {
+      tokenCache.delete(key);
+    }
+  }
+}, TOKEN_CACHE_BUFFER);
 
 export async function verifyIdToken(
   idToken: string,
@@ -44,9 +55,14 @@ export async function verifyIdToken(
     recordTokenCacheAccess("miss");
   }
 
-  const decoded = await FirebaseAdmin().auth().verifyIdToken(idToken, true);
-  tokenCache.set(idToken, decoded);
-  return decoded;
+  try {
+    const decoded = await FirebaseAdmin().auth().verifyIdToken(idToken, true);
+    tokenCache.set(idToken, decoded);
+    return decoded;
+  } catch (error) {
+    console.error('Error verifying ID token:', error);
+    throw error;
+  }
 }
 
 export async function updateUserEmail(
